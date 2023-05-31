@@ -1,4 +1,3 @@
-// Garrett Green
 // Logan Schwarz
 import java.io.BufferedReader;
 import java.io.File;
@@ -11,13 +10,17 @@ import java.util.HashMap;
 import java.util.Scanner;
 import java.util.Map.Entry;
 import java.util.List;
-import java.util.Map;
-
+import java.text.DecimalFormat;
 
 public class lab5 {
 
     public static int[] datamemory = new int[8192];
     public static int pc = 0;
+    public static int totalPredictions = 0;
+    public static int correctPredictions = 0;
+    public static int[] GHR = new int[8];
+    public static int[] countArray = new int[256];
+   // Map<Integer, String> stringMap = new HashMap<>();
 
     // This function finds and maps labels in the code 
     public static HashMap<String, Integer> mapLabels(String fname) {
@@ -68,11 +71,8 @@ public class lab5 {
         return labelMap;
     }
     
-
     // This function converts asm file into a usable array of asm lines
     public static String[] readASM(String fname){
-        
-
         // Initialize
         File infile = new File(fname);
         if (!infile.isFile()) {
@@ -176,6 +176,17 @@ public class lab5 {
         return registers;
     }
 
+    public static HashMap<String, Integer> createCounterStringMap(){
+        HashMap<String, Integer> stringMap = new HashMap<String, Integer>();
+
+        // Loop to generate all possible 8-bit binary strings and their values
+        for (int i = 0; i < 256; i++) {
+            String binaryString = String.format("%8s", Integer.toBinaryString(i)).replace(' ', '0');
+            stringMap.put(binaryString, i);
+        }
+
+        return stringMap;
+    }
     
     public static void main(String[] args) throws FileNotFoundException, IOException{
 
@@ -199,11 +210,31 @@ public class lab5 {
         */
 
         HashMap<String, Integer> registers = createRegistersMap();
-    
+        HashMap<String, Integer> stringMap = createCounterStringMap();
+
+        // Print the stringMap
+        for (HashMap.Entry<String, Integer> entry : stringMap.entrySet()) {
+            System.out.println(entry.getKey() + " : " + entry.getValue());
+        }
+
+        for (int i = 0; i < GHR.length; i++) {
+            GHR[i] = 0;  // Setting each element to 0
+        }
+        for (int i = 0; i < countArray.length; i++) {
+            countArray[i] = 0;  // Setting each element to 0
+        }
+        
+
         // registers are null going into this 
-        if (args.length == 1) {
+        if (args.length == 2 && (args[1].equals("2") || args[1].equals("4") || args[1].equals("8"))) {
             // interactive
+            int bitCount = Integer.parseInt(args[1]);
             Scanner scanner = new Scanner(System.in);
+            System.out.println(bitCount);
+            if (!(bitCount == 2 || bitCount == 4 || bitCount == 8)){
+                System.out.println("Invalid GHR bit count.");
+                System.exit(0);
+            }
 
             while (true) {
                 System.out.print("mips> ");
@@ -244,13 +275,10 @@ public class lab5 {
                         System.out.println();
                     }
                     
-                
-                    
                     else if (userIn[0].equals("s")){
                         if (pc < asmarray.length){
-                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers);
-                            //updateGHR
-                            operation.updateGHR(asmarray[pc].split("\\s+")[0], false);
+                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
+                            System.out.println("The instruction about to be executed is: " + asmarray[pc]);
 
                             registers = operation.execute_instruction();
                             
@@ -266,9 +294,7 @@ public class lab5 {
                         // run whole program
                         int count = 0;
                         while (pc < asmarray.length) {
-                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers);
-                            // Update GHR
-                            operation.updateGHR(asmarray[pc].split("\\s+")[0], false);
+                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
 
                             registers = operation.execute_instruction();
                             pc++;
@@ -293,15 +319,19 @@ public class lab5 {
                         System.exit(0);
                     }
                     else if (userIn[0].equals("b")){
-                        instrOp operation = new instrOp("", labelMap, registers);
-                        operation.printBranchPrediction();
+                        double battingPercentage = (float)correctPredictions/(float)totalPredictions;
+                        battingPercentage = battingPercentage * 100;
+                        DecimalFormat df = new DecimalFormat("##.##");
+                        String fbattingPercentage = df.format(battingPercentage);
+                        System.out.println(fbattingPercentage + "% (" + correctPredictions + " correct Predictions, " + totalPredictions + " predictions)");
                     }
+
                 } else if (userIn.length == 2 && userIn[0].equals("s")){
                     // code for s num
                     int count = 0;
                     while (count < Integer.parseInt(userIn[1])){
                         if (pc < asmarray.length){ 
-                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers);
+                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
                             registers = operation.execute_instruction();
                             pc++;
                             count++;
@@ -321,8 +351,143 @@ public class lab5 {
                     }
                 }
             }
-        }
-        else if (args.length == 2){
+        } else if (args.length == 2) {
+                // script
+                String filename = args[1];
+                File script = new File(filename);
+    
+                if (!script.isFile() || !script.exists()){
+                    System.out.print("Unable to open given file\n");
+                    return;
+                }
+                ArrayList<ArrayList<String>> lines = new ArrayList<>(); 
+                
+                int bitCount = 2;
+                
+                try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        String[] splitLine = line.split(" "); 
+                        ArrayList<String> words = new ArrayList<>(); // initialize ArrayList to hold words
+                        for (String word : splitLine) {
+                            words.add(word); // add each word to ArrayList
+                        }
+                        lines.add(words); // add ArrayList of words to ArrayList of lines
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+    
+                for (int i = 0; i < lines.size(); i++){
+                    if (lines.get(i).size() == 1){
+                        String first = lines.get(i).get(0);
+                        if (first.equals("h")){
+                            System.out.println("List of commands:\n" +
+                                               "h = show help\n" + 
+                                               "d = dump register state\n" +
+                                               "s = single step through the program (i.e. execute 1 instruction and stop) s num = step through num instructions of the program\n" +
+                                               "r = run until the program ends\n" +
+                                               "m num1 num2 = display data memory from location num1 to num2\n" +
+                                               "c = clear all registers, memory, and the program counter to 0\n" +
+                                               "b = show the branch prediction accuracy once the program is complete\n" +
+                                               "q = exit the program");
+    
+                        }
+                        else if (first.equals("d")){
+                            // dump registers
+                            System.out.println("pc = " + pc);
+                                                
+                            // Create a list of register names in the desired order
+                            List<String> registerNames = new ArrayList<>(Arrays.asList(
+                                "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3",
+                                "$t4", "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5",
+                                "$s6", "$s7", "$t8", "$t9", "$sp", "$ra"
+                            ));
+
+                            int count = 0;
+                            for (String registerName : registerNames) {
+                                System.out.printf("%-4s = %-3d    ", registerName, registers.get(registerName));
+                                count++;
+                                if (count % 4 == 0) {
+                                    System.out.println();
+                                }
+                            }
+                            System.out.println();
+                        }
+                        else if (first.equals("s")){
+                            if (pc < asmarray.length){
+                                instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
+                                registers = operation.execute_instruction();
+                                
+                                // single step through instructions
+                                pc++;
+                                System.out.println("1 instruction completed.");
+                            }
+                            else {
+                                System.out.println("Program Completed. Please clear.");
+                            }
+                        }
+                        else if (first.equals("r")){
+                            int count = 0;
+                            while (pc < asmarray.length) {
+                                instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
+                                registers = operation.execute_instruction();
+                                pc++;
+                                count++;
+                            }
+                            System.out.println("Program Completed. Please clear.");
+                            System.out.println(count + " instruction(s) completed.");
+                        }
+                        else if(first.equals("c")){
+                            // clear registers, memory (pc == 0)
+                            System.out.println("yo\n");
+                            for (Entry<String, Integer> entry : registers.entrySet()) {
+                                entry.setValue(0);
+                            }
+                            for (int j = 0; j < datamemory.length; j++) {
+                                datamemory[j] = 0;
+                            }
+                            pc = 0;
+                        }
+                        else if(first.equals("b")){
+                            double battingPercentage = (float)correctPredictions/(float)totalPredictions;
+                            battingPercentage = battingPercentage * 100;
+                            DecimalFormat df = new DecimalFormat("##.##");
+                            String fbattingPercentage = df.format(battingPercentage);
+                            System.out.println(fbattingPercentage + "% (" + correctPredictions + " correct Predictions, " + totalPredictions + " predictions)");
+                        }
+                        else if (first.equals("q")){
+                            // exit program 
+                            System.exit(0);
+                        }
+                    }
+                    else if (lines.get(i).size() == 2 && lines.get(i).get(0).equals("s")){
+                        int instrNum = Integer.parseInt(lines.get(i).get(1));
+                        int count = 0;
+                        while (count < instrNum){
+                            if (pc < asmarray.length){ 
+                                instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
+                                registers = operation.execute_instruction();
+                                pc++;
+                                count++;
+                            }
+                            else {
+                                System.out.println("Reached the end of program. Please clear.");
+                                count = instrNum;
+                            }       
+                        }
+                        System.out.println(instrNum + " instruction(s) completed.");
+                    }
+                    else if(lines.get(i).size() == 3 && lines.get(i).get(0).equals("m")){
+                        int lower = Integer.parseInt(lines.get(i).get(1));
+                        int upper = Integer.parseInt(lines.get(i).get(2));
+                        for (int k = lower; k <= upper; k++) {
+                            System.out.println("[" + k + "] = " + datamemory[k]);
+                        }
+                    }
+                }
+    
+        } else if (args.length == 3 && (args[2].equals("2") || args[2].equals("4") || args[2].equals("8"))) {
             // script
             String filename = args[1];
             File script = new File(filename);
@@ -332,10 +497,11 @@ public class lab5 {
                 return;
             }
             ArrayList<ArrayList<String>> lines = new ArrayList<>(); 
-
+            
+            int bitCount = Integer.parseInt(args[2]);
+            
             try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
                 String line;
-    
                 while ((line = br.readLine()) != null) {
                     String[] splitLine = line.split(" "); 
                     ArrayList<String> words = new ArrayList<>(); // initialize ArrayList to hold words
@@ -366,21 +532,27 @@ public class lab5 {
                     else if (first.equals("d")){
                         // dump registers
                         System.out.println("pc = " + pc);
-                        int count = 1;
-                        for (Entry<String, Integer> entry : registers.entrySet()) {
-                            System.out.print(entry.getKey() + " = " + entry.getValue() + "    ");
-                            if (count == 3){
-                                System.out.println();
-                                count = 0;
-                            }
+                                            
+                        // Create a list of register names in the desired order
+                        List<String> registerNames = new ArrayList<>(Arrays.asList(
+                            "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3",
+                            "$t4", "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5",
+                            "$s6", "$s7", "$t8", "$t9", "$sp", "$ra"
+                        ));
+
+                        int count = 0;
+                        for (String registerName : registerNames) {
+                            System.out.printf("%-4s = %-3d    ", registerName, registers.get(registerName));
                             count++;
+                            if (count % 4 == 0) {
+                                System.out.println();
+                            }
                         }
+                        System.out.println();
                     }
                     else if (first.equals("s")){
                         if (pc < asmarray.length){
-                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers);
-                            //update GHR
-                            operation.updateGHR(asmarray[pc].split("\\s+")[0], false);
+                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
                             registers = operation.execute_instruction();
                             
                             // single step through instructions
@@ -394,9 +566,7 @@ public class lab5 {
                     else if (first.equals("r")){
                         int count = 0;
                         while (pc < asmarray.length) {
-                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers);
-                            //update GHR
-                            operation.updateGHR(asmarray[pc].split("\\s+")[0], false);
+                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
                             registers = operation.execute_instruction();
                             pc++;
                             count++;
@@ -416,9 +586,11 @@ public class lab5 {
                         pc = 0;
                     }
                     else if(first.equals("b")){
-                        System.out.println("hello\n");
-                        instrOp operation = new instrOp("", labelMap, registers); //Empty instr
-                        operation.printBranchPrediction();
+                        double battingPercentage = (float)correctPredictions/(float)totalPredictions;
+                        battingPercentage = battingPercentage * 100;
+                        DecimalFormat df = new DecimalFormat("##.##");
+                        String fbattingPercentage = df.format(battingPercentage);
+                        System.out.println(fbattingPercentage + "% (" + correctPredictions + " correct Predictions, " + totalPredictions + " predictions)");
                     }
                     else if (first.equals("q")){
                         // exit program 
@@ -430,7 +602,7 @@ public class lab5 {
                     int count = 0;
                     while (count < instrNum){
                         if (pc < asmarray.length){ 
-                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers);
+                            instrOp operation = new instrOp(asmarray[pc], labelMap, registers, stringMap, bitCount);
                             registers = operation.execute_instruction();
                             pc++;
                             count++;
@@ -451,10 +623,11 @@ public class lab5 {
                 }
             }
 
+        } else {
+            System.out.println("Invalid arguments: Please enter: \nlab5.java asm script -or-\nlab5.java asm GHRbitCount -or-\nlab5.java asm script GHRbitCount\n");
+            System.exit(0);
         }
-        else{
-            System.out.println("Incorrect arguments passed!");
-            return;
-        }
-    }    
+
+    }
+
 }
